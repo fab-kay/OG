@@ -1,0 +1,318 @@
+
+
+
+
+-- This defines the module process of the way the machine A transitions from each state.
+--A Message Bus was imlemeted below in which the Machine A, B and authentification server S will look to grab their respective messages accordingly.
+
+--Here is Machine A and it's various states, it first communicates with the server s and then the machine B while access the message bus
+
+MODULE A_Status(Message_Bus, Abegin_send2b, Asend_enc2b, Arec_enc4b, Aend_send2b, Aend_rec4b, A_recKab_S, Abegin_rec4b)
+
+  VAR
+    Astate  : {idle, send2s, send2b, rec4s, rec4b, sendenc2b};
+
+ASSIGN
+    init(Astate) := idle;
+    next(Astate) :=
+      case
+       Astate = idle & Message_Bus = free : send2s;
+       Astate = send2s & Message_Bus = mes2 : rec4s;
+       Astate = rec4s & Message_Bus = free : send2b;
+       Astate = send2b & Message_Bus = mes4 : rec4b;
+       Astate = rec4b & Message_Bus = free : sendenc2b;
+       Astate = sendenc2b & Message_Bus = mes4 : idle;
+       TRUE : Astate;
+       esac;
+
+      next(Message_Bus) :=
+        case
+          Message_Bus = free & Astate = send2s : mes1;
+          Message_Bus = mes2 & Astate = rec4s : free;
+          Message_Bus = free & Astate = send2b : mes3;
+          Message_Bus = mes4 & Astate = rec4b : free;
+          Message_Bus = free & Astate = sendenc2b : mes5;
+          TRUE : Message_Bus;
+          esac;
+
+          --Here a counter was implemented to count how many times machine A receives a message back from machine B
+                 next(Abegin_rec4b) :=
+                    case
+                        Astate = rec4b : case
+                                           (Abegin_rec4b +1) mod 6 != 0 : Abegin_rec4b +1;
+                                            TRUE : Abegin_rec4b;
+                                            esac;
+                      TRUE: Abegin_rec4b;
+                    esac;
+
+-- Here a counter was implemented to count the moment in which machine A begins the process of passing the message.
+          next(Abegin_send2b) :=
+           case
+             Astate = send2s :   case
+                                   (Abegin_send2b + 1) mod 6 != 0 : Abegin_send2b + 1;
+                                   TRUE : Abegin_send2b;
+                                 esac;
+              TRUE: Abegin_send2b;
+             esac;
+
+
+
+-- Here a counter was implemented to count how many times machine A sends the encrypted message to machine B and it receives it.
+          next(Asend_enc2b) :=
+            case
+              Astate = send2b : case
+                                  (Asend_enc2b + 1) mod 6 != 0 : Asend_enc2b +1;
+                                  TRUE : Asend_enc2b;
+                                esac;
+             TRUE: Asend_enc2b;
+            esac;
+
+-- Here a counter was implemented to count the amount of times A receives an encrypted message back from machine B
+        next(Arec_enc4b) :=
+          case
+            Astate = sendenc2b: case
+                                 (Arec_enc4b + 1) mod 6 != 0 : Arec_enc4b +1;
+                                 TRUE : Arec_enc4b;
+                                esac;
+            TRUE : Arec_enc4b;
+            esac;
+
+-- here we implemented a counter to count the amount of times machine A finishes the process of sending the message to machine B
+        next(Aend_send2b) :=
+          case
+            (Astate = send2b) & (Message_Bus = mes3) : case
+                                (Aend_send2b + 1) mod 6 != 0 : Aend_send2b +1;
+                                TRUE : Aend_send2b;
+                             esac;
+           TRUE: Aend_send2b;
+          esac;
+
+-- Here we implemented a counter to count the amount of times that machine A finshes the process of receiving a response from machine B
+       next(Aend_rec4b) :=
+        case
+          (Astate = rec4b) & (Message_Bus = free) : case
+                                  (Aend_rec4b + 1) mod 6 != 0 : Aend_rec4b +1;
+                                  TRUE: Aend_rec4b;
+                                esac;
+          TRUE: Aend_rec4b;
+        esac;
+-- Here we implemented a counter to count the amount of times that machine A receives a key from Server S
+       next(A_recKab_S) :=
+        case
+          (Astate = rec4s) & (Message_Bus = free) : case
+                            (A_recKab_S +1) mod 6 != 0 : A_recKab_S +1;
+                              TRUE : A_recKab_S;
+                            esac;
+          TRUE: A_recKab_S;
+        esac;
+
+FAIRNESS
+running
+
+-- Here is the Module for the server, it sends the key to machine A
+
+MODULE S_Status(Message_Bus, S_sendKab_A)
+  VAR
+    Sstate : {idle, send2a, rec4a};
+
+    ASSIGN
+      init(Sstate) := idle;
+      next(Sstate) :=
+        case
+          (Sstate = idle) &  (Message_Bus = mes1) : rec4a;
+          (Sstate = rec4a) & (Message_Bus = free) : send2a;
+          (Sstate = send2a) & (Message_Bus = mes2) : idle;
+          TRUE : Sstate;
+        esac;
+
+      next(Message_Bus) :=
+        case
+          (Message_Bus = mes1) & (Sstate = rec4a) : free;
+          (Message_Bus = free) & (Sstate = send2a) : mes2;
+          TRUE : Message_Bus;
+          esac;
+
+-- this is a counter that counts the amount of times S sends the key to machine A
+      next(S_sendKab_A) :=
+        case
+          Sstate = send2a : case
+                              (S_sendKab_A +1) mod 6 != 0 : S_sendKab_A +1;
+                              TRUE : S_sendKab_A;
+                            esac;
+          TRUE : S_sendKab_A;
+        esac;
+
+FAIRNESS
+running
+
+-- Here is the module for machine B as it receives the message from machine A and communicates with Machine A
+
+  MODULE B_Status(Message_Bus, Bbegin_rec4a, Bend_rec4a, Brec_enc4a, Bbegin_send2a, Bend_send2a)
+    VAR
+      Bstate : {idle, rec4a, send2a, rec_enc4a};
+
+    ASSIGN
+      init(Bstate) := idle;
+      next(Bstate) :=
+        case
+          (Bstate = idle) & (Message_Bus = mes3) : rec4a;
+          (Bstate = rec4a) & (Message_Bus = free) : send2a;
+          (Bstate = send2a) & (Message_Bus = mes5) : rec_enc4a;
+          (Bstate = rec_enc4a) & (Message_Bus = free) : idle;
+          TRUE : Bstate;
+         esac;
+
+      next(Message_Bus) :=
+      case
+        (Message_Bus = mes3) & (Bstate = rec4a) : free;
+        (Message_Bus = free) & (Bstate = send2a) : mes4;
+        (Message_Bus = mes5) & (Bstate = rec_enc4a) : free;
+        TRUE : Message_Bus;
+        esac;
+
+
+-- here is the counter for the amount of times machine B begins to receive a message from A, which we would see how the itruder can affect this in the secrecy and authentication ctl specs
+        next(Bbegin_rec4a) :=
+          case
+            Bstate = rec4a : case
+                              (Bbegin_rec4a +1) mod 6 != 0 : Bbegin_rec4a +1;
+                               TRUE : Bbegin_rec4a;
+                             esac;
+            TRUE: Bbegin_rec4a;
+          esac;
+-- here is the counter to count the amount of times machine B finish the process of receiving the message sent by machine A
+        next(Bend_rec4a) :=
+        case
+          (Bstate = rec4a) & (Message_Bus = free) : case
+                            (Bend_rec4a +1) mod 6 != 0 : Bend_rec4a +1;
+                             TRUE: Bend_rec4a;
+                            esac;
+            TRUE: Bend_rec4a;
+          esac;
+-- here is the counter to count the amount of times machine B receives an encrypted key back from machine A
+       next(Brec_enc4a) :=
+        case
+         (Bstate = rec_enc4a) & (Message_Bus = free) : case
+                                (Brec_enc4a +1) mod 6 != 0 : Brec_enc4a +1;
+                                 TRUE: Brec_enc4a;
+                              esac;
+          TRUE: Brec_enc4a;
+          esac;
+-- here is the counter to count the amount of times machine B begins to respond back demonstrating it's identity to machine A
+       next(Bbegin_send2a) :=
+        case
+          Bstate = send2a : case
+                              (Bbegin_send2a +1) mod 6 != 0 : Bbegin_send2a +1;
+                              TRUE: Bbegin_send2a;
+                            esac;
+          TRUE: Bbegin_send2a;
+        esac;
+
+-- here is the counter to count the amount of times machine B finishes the process of responding back to machine A
+
+       next(Bend_send2a) :=
+        case
+          (Bstate = send2a) & (Message_Bus = mes4) : case
+                                                        (Bend_send2a +1) mod 6 != 0 : Bend_send2a +1;
+                                                      TRUE : Bend_send2a;
+                                                     esac;
+            TRUE : Bend_send2a;
+        esac;
+
+
+
+-- I implemented a message bus in the main module that takes in the messages that wants each process wants to send.
+-- Some set of counters were also implemented in the main code so that it can be called by all processes.
+
+FAIRNESS
+  running
+
+-- Here is the intuder module and it's states, it eavesdrops and can manipulate the message or replay it and send it to machine B.
+MODULE Intruder (Message_Bus)
+  VAR
+    Istate : {idle, eavesdrop, send2b};
+
+    ASSIGN
+    init(Istate) := idle;
+    next(Istate) := case
+                      Message_Bus = mes3 : eavesdrop;
+                      (Message_Bus = free) & (Istate = eavesdrop) : send2b;
+                      (Message_Bus = mes3) & (Istate = send2b) : idle;
+                      TRUE : Istate;
+                      esac;
+
+
+    next(Message_Bus) :=
+      case
+        (Message_Bus = mes3) & (Istate = eavesdrop) : free;
+        (Message_Bus = free) & (Istate = send2b) : mes3;
+        TRUE : Message_Bus;
+        esac;
+
+
+FAIRNESS
+running
+
+
+
+
+MODULE main()
+  VAR
+    Message_Bus : {free, mes1, mes2, mes3, mes4, mes5};
+    Abegin_send2b : {0,1,2,3,4,5};
+    Aend_send2b : 0..5;
+    Abegin_rec4b : {0,1,2,3,4,5};
+    Aend_rec4b : 0..5;
+    Asend_enc2b : {0,1,2,3,4,5};
+    Arec_enc4b : {0,1,2,3,4,5};
+    Bbegin_rec4a : 0..5;
+    Bend_rec4a : 0..5;
+    Brec_enc4a : 0..5;
+    S_sendKab_A : 0..5;
+    A_recKab_S : 0..5;
+    Bbegin_send2a : 0..5;
+    Bend_send2a : 0..5;
+
+
+
+    MAstate : process A_Status(Message_Bus, Abegin_send2b, Asend_enc2b, Arec_enc4b, Aend_send2b, Aend_rec4b, A_recKab_S, Abegin_rec4b);
+    ASstate : process S_Status(Message_Bus, S_sendKab_A);
+    MBstate : process B_Status(Message_Bus, Bbegin_rec4a, Bend_rec4a, Brec_enc4a, Bbegin_send2a, Bend_send2a);
+    INstate : process Intruder(Message_Bus);
+
+ASSIGN
+    init(Message_Bus) := free;
+    init(Abegin_send2b) := 0;
+    init(Abegin_rec4b) := 0;
+    init(Asend_enc2b) := 0;
+    init(Arec_enc4b) := 0;
+    init(Aend_send2b) := 0;
+    init(Aend_rec4b) := 0;
+    init(Bbegin_rec4a) := 0;
+    init(Bend_rec4a) := 0;
+    init(Brec_enc4a) := 0;
+    init(S_sendKab_A) := 0;
+    init(A_recKab_S) := 0;
+    init(Bbegin_send2a) := 0;
+    init(Bend_send2a) := 0;
+
+    SPEC
+    AG((MAstate = send2s) -> AF (ASstate = rec4a))
+
+    SPEC
+      AG ((MAstate = send2b) -> AX (MBstate = rec4a))
+
+
+    SPEC
+     AG (Abegin_send2b >= Bend_rec4a)
+
+
+    SPEC
+
+      AG(Abegin_rec4b >= Bend_send2a)
+
+    SPEC
+      AG(S_sendKab_A >= A_recKab_S)
+
+    SPEC
+      AG(Asend_enc2b >= Brec_enc4a)
