@@ -1,0 +1,15 @@
+MODULE main
+VAR
+  request : boolean;
+  state : {ready,busy};
+ASSIGN
+  init(state) := ready;
+  next(state) := case
+                   state = ready & request : busy;
+                   TRUE : {ready,busy};
+                 esac;
+
+---show_vars -i
+---SPEC
+ ---AG(request -> AF state = busy)
+ ---AG(request -> AF state = ready)
